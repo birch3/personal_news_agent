@@ -29,7 +29,7 @@ from personal_news_agent.services.store import NewsStore
 from personal_news_agent.services.tasks import ScheduledTaskService
 from personal_news_agent.services.topic_views import TopicViewService
 from personal_news_agent.services.url_store import CrawlUrlStore, MySQLCrawlUrlStore
-
+from personal_news_agent.services.content_moderation import ContentModerationError, TextModerationPlusService
 
 class SearchRequest(BaseModel):
     query: str
@@ -179,6 +179,7 @@ def create_app() -> FastAPI:
         "feed": PersonalizationService(store, registry),
         "chat": NewsChatService(store, search_service, native_ingestion=native_ingestion, deep_dive=deep_dive, topic_views=topic_views),
         "reports": ReportGenerationService(store, search_service),
+        "content_moderation": TextModerationPlusService(),
     }
     state["tasks"] = ScheduledTaskService(store, state["reports"])
     state["crawl"] = CrawlScheduler(registry, store, url_store, search_index)
@@ -427,12 +428,17 @@ def create_app() -> FastAPI:
 
     @app.post("/api/chat")
     async def chat(payload: ChatRequest) -> Any:
-        return await state["chat"].chat(payload.conversation_id, payload.message, payload.topic, payload.category_scope, payload.use_llm)
+        _ensure_safe_user_input(payload.message, state["content_moderation"])
+        return await state["chat"].chat(payload.conversation_id, payload.message, payload.topic, payload.category_scope,
+                                        payload.use_llm)
 
     @app.post("/api/chat/stream")
     async def chat_stream(payload: ChatRequest) -> StreamingResponse:
+        _ensure_safe_user_input(payload.message, state["content_moderation"])
+
         async def event_stream():
-            async for event in state["chat"].chat_events(payload.conversation_id, payload.message, payload.topic, payload.category_scope, payload.use_llm):
+            async for event in state["chat"].chat_events(payload.conversation_id, payload.message, payload.topic,
+                                                         payload.category_scope, payload.use_llm):
                 event_type = event.get("type", "message")
                 data = json.dumps(event, ensure_ascii=False, default=str)
                 yield f"event: {event_type}\ndata: {data}\n\n"
@@ -497,5 +503,17 @@ def _parse_range(value: str | None) -> TimeRange | None:
 def _mask_mobile(value: str) -> str:
     return value[:3] + "****" + value[-4:] if len(value) == 11 else value
 
-
+def _ensure_safe_user_input(message: str, moderation) -> None:
+    try:
+        result = moderation.check_query_text(message)
+    except ContentModerationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"安全检测服务暂不可用：{exc}",
+        ) from exc
+    if not result.allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="这条内容未通过安全检测，请调整后再试。",
+        )
 app = create_app()
