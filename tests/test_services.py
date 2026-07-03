@@ -1,11 +1,13 @@
 from pathlib import Path
 import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from personal_news_agent.core.models import RawArticle, RawArticleLink
 from personal_news_agent.services.chat import NewsChatService
+from personal_news_agent.services.content_moderation import ContentModerationError
 from personal_news_agent.services.crawl import CrawlScheduler
 from personal_news_agent.services.deep_dive import DeepDiveService
 from personal_news_agent.services.events import EventDiscoveryService
@@ -191,6 +193,31 @@ def test_chat_resolves_second_article_followup(services):
     assert "previous_recommendation_list" in second.required_context_items
 
 
+def test_chat_blocks_message_when_query_moderation_rejects(services):
+    _, store, search = services
+    moderation = FakeContentModeration(allowed=False, label="unsafe")
+    chat = NewsChatService(store, search, content_moderation=moderation)
+
+    response = asyncio.run(chat.chat("conv_moderation", "blocked message"))
+
+    assert response.context_relation == "query_moderation_blocked"
+    assert response.recommendations == []
+    assert response.focus_object is not None
+    assert response.focus_object.type == "moderation"
+    assert "llm_query_moderation" in response.required_context_items
+    assert store.last_turn("conv_moderation")["assistant_answer"] == response.answer
+
+
+def test_chat_continues_when_query_moderation_unavailable(services):
+    _, store, search = services
+    chat = NewsChatService(store, search, content_moderation=FakeContentModeration(error=True))
+
+    response = asyncio.run(chat.chat("conv_moderation_error", "今天游戏圈有什么新闻？"))
+
+    assert response.context_relation != "query_moderation_blocked"
+    assert response.recommendations
+
+
 def test_report_contains_timeline_and_required_sections(services):
     _, store, search = services
     reports = ReportGenerationService(store, search)
@@ -321,3 +348,26 @@ class FakeWriteIndex:
 
     async def search(self, query, category_scope=None, source_scope=None, limit=20):
         return []
+
+
+class FakeContentModeration:
+    configured = True
+
+    def __init__(self, allowed=True, label="nonLabel", error=False):
+        self.allowed = allowed
+        self.label = label
+        self.error = error
+
+    def check_query_text(self, text):
+        if self.error:
+            raise ContentModerationError("moderation unavailable")
+        return SimpleNamespace(
+            allowed=self.allowed,
+            code=200,
+            message="ok",
+            risk_level="none" if self.allowed else "high",
+            label=self.label,
+            description="blocked by fake moderation" if not self.allowed else "",
+            request_id="fake-request",
+            raw={},
+        )
