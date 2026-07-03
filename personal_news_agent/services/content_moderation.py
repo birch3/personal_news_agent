@@ -56,7 +56,6 @@ class TextModerationPlusService:
         self.endpoint = endpoint or os.getenv("ALIYUN_CONTENT_MODERATION_ENDPOINT", "green-cip.cn-shanghai.aliyuncs.com")
         # 用户输入和模型输出分别使用不同审核服务类型，必要时可以用环境变量分别覆盖。
         self.query_service = os.getenv("ALIYUN_CONTENT_MODERATION_QUERY_SERVICE", query_service)
-        self.response_service = os.getenv("ALIYUN_CONTENT_MODERATION_RESPONSE_SERVICE", response_service)
 
     @property
     def configured(self) -> bool:
