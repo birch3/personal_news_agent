@@ -218,6 +218,22 @@ def test_chat_continues_when_query_moderation_unavailable(services):
     assert response.recommendations
 
 
+def test_chat_blocks_answer_when_response_moderation_rejects(services):
+    _, store, search = services
+    moderation = FakeContentModeration(query_allowed=True, response_allowed=False, label="unsafe_output")
+    chat = NewsChatService(store, search, content_moderation=moderation)
+
+    response = asyncio.run(chat.chat("conv_response_moderation", "今天游戏圈有什么新闻？"))
+
+    assert response.context_relation == "response_moderation_blocked"
+    assert response.recommendations == []
+    assert response.focus_object is not None
+    assert response.focus_object.type == "moderation"
+    assert "llm_response_moderation" in response.required_context_items
+    assert "没有通过安全检测" in response.answer
+    assert store.last_turn("conv_response_moderation")["assistant_answer"] == response.answer
+
+
 def test_report_contains_timeline_and_required_sections(services):
     _, store, search = services
     reports = ReportGenerationService(store, search)
@@ -353,21 +369,28 @@ class FakeWriteIndex:
 class FakeContentModeration:
     configured = True
 
-    def __init__(self, allowed=True, label="nonLabel", error=False):
-        self.allowed = allowed
+    def __init__(self, allowed=True, label="nonLabel", error=False, query_allowed=None, response_allowed=None):
+        self.query_allowed = allowed if query_allowed is None else query_allowed
+        self.response_allowed = allowed if response_allowed is None else response_allowed
         self.label = label
         self.error = error
 
     def check_query_text(self, text):
+        return self._result(self.query_allowed)
+
+    def check_response_text(self, text):
+        return self._result(self.response_allowed)
+
+    def _result(self, allowed):
         if self.error:
             raise ContentModerationError("moderation unavailable")
         return SimpleNamespace(
-            allowed=self.allowed,
+            allowed=allowed,
             code=200,
             message="ok",
-            risk_level="none" if self.allowed else "high",
+            risk_level="none" if allowed else "high",
             label=self.label,
-            description="blocked by fake moderation" if not self.allowed else "",
+            description="blocked by fake moderation" if not allowed else "",
             request_id="fake-request",
             raw={},
         )

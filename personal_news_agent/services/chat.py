@@ -63,6 +63,7 @@ class NewsChatService:
             response = await self._research_chat(conv_id, message, topic, category_scope)
         else:
             response = await self._news_search(conv_id, message, topic, category_scope, use_llm)
+        response = await self._moderate_response(response)
         self._save_response_turn(response, message)
         return response
 
@@ -86,12 +87,14 @@ class NewsChatService:
         if topic_response:
             for item in topic_response.research_trace:
                 yield {"type": "trace", "item": item}
+            topic_response = await self._moderate_response(topic_response)
             self._save_response_turn(topic_response, message)
             yield {"type": "final", "response": topic_response.model_dump(mode="json")}
             return
         ordinal = extract_ordinal(message)
         if ordinal or not use_llm:
             response = await (self._article_followup(conv_id, message, ordinal) if ordinal else self._news_search(conv_id, message, topic, category_scope, use_llm))
+            response = await self._moderate_response(response)
             self._save_response_turn(response, message)
             yield {"type": "final", "response": response.model_dump(mode="json")}
             return
@@ -104,6 +107,7 @@ class NewsChatService:
         async def run_pipeline() -> None:
             try:
                 response = await self._research_chat(conv_id, message, topic, category_scope, emit_trace)
+                response = await self._moderate_response(response)
                 self._save_response_turn(response, message)
                 await queue.put({"type": "final", "response": response.model_dump(mode="json")})
             except Exception as exc:
@@ -192,6 +196,42 @@ class NewsChatService:
                     "request_id": result.request_id,
                 }
             ],
+        )
+
+    async def _moderate_response(self, response: ChatResponse) -> ChatResponse:
+        if not self.content_moderation or not getattr(self.content_moderation, "configured", False):
+            return response
+        try:
+            result = await asyncio.to_thread(self.content_moderation.check_response_text, response.answer)
+        except ContentModerationError:
+            return response
+        if result.allowed:
+            return response
+        answer = "助手生成的内容没有通过安全检测，已拦截。请换一种问法后再试。"
+        trace = [
+            *response.research_trace,
+            {
+                "stage": "输出安全检测",
+                "status": "blocked",
+                "message": result.description or result.message or "助手输出未通过内容安全检测。",
+                "label": result.label,
+                "risk_level": result.risk_level,
+                "request_id": result.request_id,
+            },
+        ]
+        return response.model_copy(
+            update={
+                "answer": answer,
+                "markdown": answer,
+                "context_relation": "response_moderation_blocked",
+                "focus_object": FocusObject(type="moderation", text=result.label or result.risk_level or "blocked"),
+                "required_context_items": [*response.required_context_items, "llm_response_moderation"],
+                "recommendations": [],
+                "evidence": [],
+                "expanded_queries": [],
+                "event_line": None,
+                "research_trace": trace,
+            }
         )
 
     def _save_response_turn(self, response: ChatResponse, message: str) -> str:
