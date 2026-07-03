@@ -7,7 +7,6 @@ from typing import Any
 
 
 LLM_QUERY_MODERATION_SERVICE = "llm_query_moderation"
-LLM_RESPONSE_MODERATION_SERVICE = "llm_response_moderation"
 
 
 class ContentModerationError(RuntimeError):
