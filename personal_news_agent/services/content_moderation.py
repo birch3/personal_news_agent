@@ -64,10 +64,6 @@ class TextModerationPlusService:
         # 用户发给大模型之前的输入检测，Service=llm_query_moderation。
         return self._check_text_with_service(text, self.query_service)
 
-    def check_response_text(self, text: str) -> ContentModerationResult:
-        # 大模型生成后、返回给用户之前的输出检测，Service=llm_response_moderation。
-        return self._check_text_with_service(text, self.response_service)
-
     def _check_text_with_service(self, text: str, service: str) -> ContentModerationResult:
         if not self.configured:
             raise ContentModerationError("Aliyun content moderation access key is not configured")
