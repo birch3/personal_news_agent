@@ -36,7 +36,6 @@ class TextModerationPlusService:
         access_key_secret: str | None = None,
         endpoint: str | None = None,
         query_service: str = LLM_QUERY_MODERATION_SERVICE,
-        response_service: str = LLM_RESPONSE_MODERATION_SERVICE,
     ):
         # 优先使用显式传参；没有传参时，读取本地环境变量，兼容项目里已有的阿里云密钥命名。
         self.access_key_id = (

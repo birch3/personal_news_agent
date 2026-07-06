@@ -63,7 +63,6 @@ class NewsChatService:
             response = await self._research_chat(conv_id, message, topic, category_scope)
         else:
             response = await self._news_search(conv_id, message, topic, category_scope, use_llm)
-        response = await self._moderate_response(response)
         self._save_response_turn(response, message)
         return response
 
@@ -87,14 +86,12 @@ class NewsChatService:
         if topic_response:
             for item in topic_response.research_trace:
                 yield {"type": "trace", "item": item}
-            topic_response = await self._moderate_response(topic_response)
             self._save_response_turn(topic_response, message)
             yield {"type": "final", "response": topic_response.model_dump(mode="json")}
             return
         ordinal = extract_ordinal(message)
         if ordinal or not use_llm:
             response = await (self._article_followup(conv_id, message, ordinal) if ordinal else self._news_search(conv_id, message, topic, category_scope, use_llm))
-            response = await self._moderate_response(response)
             self._save_response_turn(response, message)
             yield {"type": "final", "response": response.model_dump(mode="json")}
             return
@@ -107,7 +104,6 @@ class NewsChatService:
         async def run_pipeline() -> None:
             try:
                 response = await self._research_chat(conv_id, message, topic, category_scope, emit_trace)
-                response = await self._moderate_response(response)
                 self._save_response_turn(response, message)
                 await queue.put({"type": "final", "response": response.model_dump(mode="json")})
             except Exception as exc:
