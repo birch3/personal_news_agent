@@ -1,6 +1,6 @@
 let mobileCategory = "";
 let mobileViewMode = "chat";
-let mobileChatTouchY = null;
+let mobileSnapTimer = null;
 let mobileTypingScrollY = 0;
 const mobileState = {
   topic: "张雪机车",
@@ -31,11 +31,7 @@ document.querySelector("[data-mobile-brief-toggle]")?.addEventListener("click", 
   setMobileBriefExpanded(card?.hidden);
 });
 
-window.addEventListener("scroll", syncMobileViewModeFromScroll, { passive: true });
-document.querySelector(".mobile-messages")?.addEventListener("touchstart", handleMobileMessagesTouchStart, { passive: true });
-document.querySelector(".mobile-messages")?.addEventListener("touchmove", handleMobileMessagesTouchMove, { passive: false });
-document.querySelector(".mobile-messages")?.addEventListener("touchend", handleMobileMessagesTouchEnd, { passive: true });
-document.querySelector(".mobile-messages")?.addEventListener("touchcancel", handleMobileMessagesTouchEnd, { passive: true });
+window.addEventListener("scroll", handleMobilePageScroll, { passive: true });
 document.querySelector("#message")?.addEventListener("focus", handleMobileInputFocus);
 document.querySelector("#message")?.addEventListener("blur", handleMobileInputBlur);
 window.visualViewport?.addEventListener("resize", updateMobileKeyboardOffset);
@@ -182,9 +178,9 @@ function syncMobileBriefToggle() {
 }
 
 function revealMobileFeed() {
-  const target = document.querySelector(".mobile-feed-card");
+  const target = document.querySelector(".mobile-content-group");
   if (!target) return;
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  alignMobileSnapTarget(target);
 }
 
 function setMobileViewMode(mode, options = {}) {
@@ -194,13 +190,15 @@ function setMobileViewMode(mode, options = {}) {
     : document.querySelector(".mobile-agent-card");
   document.body.classList.toggle("mobile-chat-view", mobileViewMode === "chat");
   if (!target) return;
-  target.scrollIntoView({
-    behavior: options.instant ? "auto" : "smooth",
-    block: "start",
-  });
+  alignMobileSnapTarget(target, options.instant ? "auto" : "smooth");
 }
 
 function syncMobileViewModeFromScroll() {
+  if (document.body.classList.contains("mobile-typing")) {
+    mobileViewMode = "chat";
+    document.body.classList.add("mobile-chat-view");
+    return;
+  }
   const agent = document.querySelector(".mobile-agent-card");
   if (!agent) return;
   const rect = agent.getBoundingClientRect();
@@ -208,34 +206,49 @@ function syncMobileViewModeFromScroll() {
   document.body.classList.toggle("mobile-chat-view", mobileViewMode === "chat");
 }
 
-function handleMobileMessagesTouchStart(event) {
-  mobileChatTouchY = event.touches[0]?.clientY ?? null;
+function handleMobilePageScroll() {
+  syncMobileViewModeFromScroll();
+  if (document.body.classList.contains("mobile-typing")) return;
+  window.clearTimeout(mobileSnapTimer);
+  mobileSnapTimer = window.setTimeout(snapMobileToNearestCard, 120);
 }
 
-function handleMobileMessagesTouchMove(event) {
-  const messages = event.currentTarget;
-  const currentY = event.touches[0]?.clientY;
-  if (mobileChatTouchY === null || currentY === undefined) return;
-  const deltaY = mobileChatTouchY - currentY;
-  const canScrollUp = messages.scrollTop > 0;
-  const canScrollDown = messages.scrollTop + messages.clientHeight < messages.scrollHeight - 1;
-  const shouldKeepInside = (deltaY < 0 && canScrollUp) || (deltaY > 0 && canScrollDown);
+function snapMobileToNearestCard() {
+  if (document.body.classList.contains("mobile-typing")) return;
+  const targets = [document.querySelector(".mobile-agent-card"), document.querySelector(".mobile-push-card")]
+    .filter((node) => shouldSnapMobileCardTop(node));
+  if (!targets.length) return;
+  const nearest = targets.reduce((best, node) => {
+    const distance = Math.abs(node.getBoundingClientRect().top - getMobileSnapTop());
+    return !best || distance < best.distance ? { node, distance } : best;
+  }, null);
+  if (nearest) alignMobileSnapTarget(nearest.node);
+}
 
-  if (shouldKeepInside) {
-    messages.scrollTop += deltaY;
-    event.preventDefault();
-    event.stopPropagation();
+function shouldSnapMobileCardTop(node) {
+  if (!node) return false;
+  const topDistance = node.getBoundingClientRect().top - getMobileSnapTop();
+  if (node.classList.contains("mobile-agent-card")) {
+    return Math.abs(topDistance) <= 500;
   }
-  mobileChatTouchY = currentY;
+  return Math.abs(topDistance) <= 200;
 }
 
-function handleMobileMessagesTouchEnd() {
-  mobileChatTouchY = null;
+function getMobileSnapTop() {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--mobile-header-height")) || 0;
+}
+
+function alignMobileSnapTarget(target, behavior = "smooth") {
+  if (!target) return;
+  const targetTop = window.scrollY + target.getBoundingClientRect().top - getMobileSnapTop();
+  window.scrollTo({ top: Math.max(0, targetTop), behavior });
 }
 
 function handleMobileInputFocus() {
   mobileTypingScrollY = window.scrollY;
+  mobileViewMode = "chat";
   document.body.classList.add("mobile-typing");
+  document.body.classList.add("mobile-chat-view");
   updateMobileKeyboardOffset();
   window.setTimeout(() => window.scrollTo({ top: mobileTypingScrollY, behavior: "auto" }), 60);
 }

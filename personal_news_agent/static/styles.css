@@ -1,5 +1,6 @@
 :root {
-  --mobile-footer-reserve: calc(156px + env(safe-area-inset-bottom));
+  --mobile-footer-reserve: calc(96px + env(safe-area-inset-bottom));
+  --mobile-header-height: 76px;
   --mobile-keyboard-offset: 0px;
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -1513,27 +1514,23 @@ pre {
 
 .mobile-shell {
   background: #eef2f6;
-  scroll-padding-bottom: var(--mobile-footer-reserve);
-  scroll-padding-top: 76px;
-  scroll-snap-type: y mandatory;
-}
-
-.mobile-root {
-  scroll-padding-bottom: var(--mobile-footer-reserve);
-  scroll-padding-top: 76px;
-  scroll-snap-type: y mandatory;
 }
 
 .mobile-top {
   align-items: center;
   background: #ffffff;
   border-bottom: 1px solid #dde1e7;
+  box-sizing: border-box;
   display: flex;
+  height: var(--mobile-header-height);
   justify-content: space-between;
   padding: 14px 16px;
-  position: sticky;
+  position: fixed;
+  left: 0;
+  right: 0;
   top: 0;
-  z-index: 2;
+  width: 100%;
+  z-index: 20;
 }
 
 .mobile-top h1 {
@@ -1547,7 +1544,7 @@ pre {
 .mobile-layout {
   display: grid;
   gap: 8px;
-  padding: 8px 12px var(--mobile-footer-reserve);
+  padding: calc(var(--mobile-header-height) + 8px) 12px var(--mobile-footer-reserve);
 }
 
 .mobile-card {
@@ -1555,7 +1552,6 @@ pre {
   border: 1px solid #dde1e7;
   border-radius: 8px;
   padding: 12px;
-  scroll-margin-top: 86px;
 }
 
 .mobile-agent-card {
@@ -1565,19 +1561,17 @@ pre {
   min-height: calc(100svh - 176px);
   order: 2;
   padding-bottom: 6px;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 .mobile-today-card {
   display: grid;
   gap: 12px;
   left: 12px;
-  max-height: calc(100vh - 106px);
+  max-height: calc(100vh - var(--mobile-header-height) - 20px);
   overflow: auto;
   position: fixed;
   right: 12px;
-  top: 86px;
+  top: calc(var(--mobile-header-height) + 8px);
   z-index: 8;
 }
 
@@ -1592,18 +1586,13 @@ pre {
 
 .mobile-push-card {
   order: 4;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 .mobile-content-group {
   display: grid;
   gap: 8px;
   order: 5;
-  padding-bottom: 56px;
-  scroll-margin-top: 86px;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
+  padding-bottom: 12px;
 }
 
 .mobile-logged-out .mobile-push-card {
@@ -1758,14 +1747,6 @@ pre {
   z-index: 7;
 }
 
-.mobile-chat-view .mobile-layout {
-  padding-top: 12px;
-}
-
-.mobile-shell:not(.mobile-chat-view) .mobile-layout {
-  padding-top: 12px;
-}
-
 .category-tabs button {
   background: #ffffff;
   color: #3f4651;
@@ -1783,6 +1764,7 @@ pre {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: auto;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
 
